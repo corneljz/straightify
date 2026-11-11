@@ -5,7 +5,7 @@ import glob
 
 # --- CONFIGURATION ---
 # Create a folder called 'training_images' next to this script and put your DocUNet photos inside
-IMAGE_FOLDER = 'training_images'
+IMAGE_FOLDER = 'train'
 OUTPUT_JSON = 'labels.json'
 
 points = []
