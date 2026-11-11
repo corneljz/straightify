@@ -1,0 +1,7 @@
+﻿.venv/
+__pycache__/
+data/
+corner_data/
+models/
+outputs/batch/
+*.zip
