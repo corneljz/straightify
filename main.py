@@ -1,5 +1,6 @@
 import cv2 # import the opencv module
 import numpy as np # import numpy module refer to as np
+import pytesseract # importy tesseract for OCR module
 
 #1. Detect the edge
 img = cv2.imread('test1.jpg') # load the img we want to manipulate
@@ -30,73 +31,70 @@ for contour in contours:
         board_contour = approx
         break
 
-'''
-# Visualizatio of contours
-if board_contour is not None:
-    cv2.drawContours(img, [board_contour], -1, (0, 255, 0), 3) # Apply green color on the contour
-    
-    # Draw red circles on the 4 corners
-    for point in board_contour:
-        x, y = point[0]
-        cv2.circle(img, (x, y), 6, (0, 0, 255), -1)
-
-# Show the final img
-cv2.imshow('Detected Whiteboard', img)
-'''
-
-# A helper function to ensure our 4 corners are always sorted correctly
-def order_points(pts):
-    rect = np.zeros((4, 2), dtype="float32")
+#3. Warped and Reshape the Image
+# Sort 4 corner to top-left, top-right, bottom-right, bottom-left
+def order(corner):
+    set = np.zeros((4, 2), dtype="float32") # default rect
     
     # Top-left has the smallest x+y sum; Bottom-right has the largest x+y sum
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-    
+    s = corner.sum(axis=1) # sum the axis
+    set[0] = corner[np.argmin(s)] # min sum at top-left
+    set[2] = corner[np.argmax(s)] # max sum at bottom-right
     # Top-right has the smallest y-x difference; Bottom-left has the largest
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
+    diff = np.diff(corner, axis=1) # find the difference
+    set[1] = corner[np.argmin(diff)] # min difference at top-right
+    set[3] = corner[np.argmax(diff)] # mac difference at bottom-left
     
-    return rect
-
-# [Previous code: load img, find board_contour]
+    return set
 
 if board_contour is not None:
-    # The contour has extra brackets (shape is 4,1,2). Strip them to get 4 pairs of x,y coordinates
-    pts = board_contour.reshape(4, 2)
-    rect = order_points(pts)
-    (tl, tr, br, bl) = rect
+    corner = board_contour.reshape(4, 2) # Change contour previously 4, 1, 2 (4 points, 1 basically nothing, 2 axis[x and y]) structure to 4, 2 (4 points and their 2 axis)
+    set = order(corner) # Order it to have an order of: top-left, top-right, bottom-right, bottom-left
+    (tl, tr, br, bl) = set # Assign the order to their variables
 
-    # Calculate the maximum width of the new flattened img using the Pythagorean theorem
-    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
-    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
-    maxWidth = max(int(widthA), int(widthB))
+    # Maximum width of the new flattened img using the Pythagorean theorem
+    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2)) # Using the difference in x and y axis of the bottom horizontal points, we can achieve width by summing both squareroot of the difference.
+    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2)) # Do the same but for the top part
+    avgWidth = int((widthA+widthB)/2) # from both width, find the maximum
 
-    # Calculate the maximum height
-    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
-    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
-    maxHeight = max(int(heightA), int(heightB))
+    # Maximum height
+    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2)) # Do the same pythagorean method but for height at the right
+    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2)) # This one is for the left
+    avgHeight = int((heightA+heightB)/2) # Find the highest one out of both
 
-    # Define the exact destination points of our perfect rectangle
-    dst = np.array([
-        [0, 0],                             # Top-Left
-        [maxWidth - 1, 0],                  # Top-Right
-        [maxWidth - 1, maxHeight - 1],      # Bottom-Right
-        [0, maxHeight - 1]                  # Bottom-Left
+    # Find the new = coordinates of the estimated rectangle
+    rect = np.array([
+        [0, 0], # Top-Left
+        [avgWidth - 1, 0], # Top-Right
+        [avgWidth - 1, avgHeight - 1], # Bottom-Right
+        [0, avgHeight - 1] # Bottom-Left
     ], dtype="float32")
 
-    # Compute the transformation matrix that maps the crooked corners to the flat ones
-    matrix = cv2.getPerspectiveTransform(rect, dst)
-    
-    # Apply the mathematical warp to the original high-resolution img
-    warped = cv2.warpPerspective(img, matrix, (maxWidth, maxHeight))
+    # Map the old corners to the new flat ones
+    mapping = cv2.getPerspectiveTransform(set, rect)
+    # Warp the original img to fit the new transformation
+    warping = cv2.warpPerspective(img, mapping, (avgWidth, avgHeight))
 
-    # Display the snapped-straight result
-    cv2.imshow("Original", img)
-    cv2.imshow("Flattened Board", warped)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+graywarp = cv2.cvtColor(warping, cv2.COLOR_BGR2GRAY) # make the  warped img grayscale
+clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+clahe_image = clahe.apply(graywarp)
+clean_board = cv2.adaptiveThreshold(
+    clahe_image, 
+    255,                              # Maximum value (pure white background)
+    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,   # Use a Gaussian curve to weigh neighboring pixels
+    cv2.THRESH_BINARY,                # Output black text on a white background
+    21,                               # Block Size: The size of the local neighborhood (must be odd)
+    10                                # Constant (C): Subtracted from the mean. Acts as a tuning knob.
+)
 
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+custom_config = r'--oem 3 --psm 11'
+extracted_text = pytesseract.image_to_string(clahe_image, config=custom_config)
+print("\n=== EXTRACTED WHITEBOARD NOTES ===")
+print(extracted_text)
+
+cv2.imshow("Flattened (Uneven Lighting)", graywarp)
+cv2.imshow("CLAHE (Contrast Fixed)", clahe_image)
+cv2.imshow("Final Clean Board", clean_board)
 cv2.waitKey(0) # Wait for a key input
 cv2.destroyAllWindows() # Close all windows
