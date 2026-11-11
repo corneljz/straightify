@@ -18,7 +18,12 @@ conda activate ENVNAME
 ```
 Inside of that .txt file is all the modules/libraries you need to run this program. You can check it out inside, or go to QNA below to know what it does!
 
-3. Download tesseract OCR engine software (You can try via chocolatey)
+3. Download tesseract OCR engine software (You can try via chocolatey), this is for the OCR
+
+4. Run:
+```bash
+python main.py
+```
 
 # QNA:
 1.  How do I know what you are doing with the code? (For the nerds)
